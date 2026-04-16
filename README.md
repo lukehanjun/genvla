@@ -49,21 +49,37 @@ uv run torchrun --standalone --nnodes=1 --nproc_per_node=2 \
   --exp_name dexmimicgen_two_arm_threading_v1
 ```
 
-### 5) Later, serve a trained PyTorch checkpoint with the custom config
-```bash
-uv run scripts/serve_policy.py \
-  policy:checkpoint \
-  --policy.config=pi0_dexmimicgen_two_arm_threading \
-  --policy.dir=checkpoints/pi0_dexmimicgen_two_arm_threading/dexmimicgen_two_arm_threading_v1/<step>
-```
-
 ### 6) Visualizing
 ```bash
 # Visualize dataset only
-uv run examples/dexmimicgen/visualize_actions.py --ground-truth-only --episode-idx 0
+uv run examples/dexmimicgen/visualize_actions.py dataset \
+  --repo-id local/dexmimicgen_two_arm_threading --episode 0 \
+  --output-dir ./viz_out
 
 # Visualize model output
-uv run examples/dexmimicgen/visualize_actions.py \
-  --checkpoint-dir checkpoints/pi0_dexmimicgen_two_arm_threading/dexmimicgen_two_arm_threading_rot6d/10000 \
-  --episode-idx 0 --output-dir data/dexmimicgen/viz/
+uv run examples/dexmimicgen/visualize_actions.py policy \
+  --train-config pi0_dexmimicgen_two_arm_threading \
+  --checkpoint checkpoints/pi0_dexmimicgen_two_arm_threading/<run>/<step> \
+  --hdf5 /path/to/two_arm_threading.hdf5 --demo demo_0 --frame 0 \
+  --output-dir ./viz_out
+```
+
+### 7) Running in Dexmimicgen
+```bash
+# Policy server
+cd /home/horowitz3/pi0/openpi
+uv run scripts/serve_policy.py --port 8000 policy:checkpoint \
+  --policy.config=pi0_dexmimicgen_two_arm_threading \
+  --policy.dir=checkpoints/pi0_dexmimicgen_two_arm_threading/dexmimicgen_two_arm_threading_rot6d/10000
+
+
+# Dexmimicgen
+conda activate dexmimicgen
+python examples/dexmimicgen/rollout_sim.py \
+  --host localhost --port 8000 \
+  --dataset /home/horowitz3/pi0/dexmimicgen/datasets/generated/two_arm_threading.hdf5 \
+  --num-episodes 1 --max-steps 400 --replan-steps 10 \
+  --video-path rollout_output.mp4 \
+  --camera-names agentview robot0_eye_in_hand robot1_eye_in_hand \
+  --stop-on-success
 ```
