@@ -29,8 +29,12 @@ def quat_xyzw_to_rotmat(q):
 
 
 def rotmat_to_rot6d(rot_mat):
-    """3x3 rotation matrix -> 6D continuous rotation (first two columns, flattened)."""
-    return np.asarray(rot_mat[:, :2], dtype=np.float32).reshape(-1)
+    """3x3 rotation matrix -> 6D continuous rotation.
+
+    Uses DexMimicGen's row-major convention (first two rows of R = first two cols of R.T)
+    so the state rot6d matches the action rot6d stored in the dataset.
+    """
+    return np.asarray(rot_mat[:2, :], dtype=np.float32).reshape(-1)
 
 
 def quat_xyzw_to_rot6d(q):
@@ -108,10 +112,12 @@ def build_observation(obs, prompt="thread the needle with both arms"):
             np.asarray([obs["robot1_gripper_qpos"][0]], dtype=np.float32),
         ]
     )
+    # robosuite/mujoco camera observations are returned vertically flipped;
+    # flip to upright so the policy sees the same orientation as the training data.
     images = {
-        "top": np.asarray(obs["agentview_image"], dtype=np.uint8),
-        "right_wrist": np.asarray(obs["robot0_eye_in_hand_image"], dtype=np.uint8),
-        "left_wrist": np.asarray(obs["robot1_eye_in_hand_image"], dtype=np.uint8),
+        "top": np.ascontiguousarray(obs["agentview_image"][::-1], dtype=np.uint8),
+        "right_wrist": np.ascontiguousarray(obs["robot0_eye_in_hand_image"][::-1], dtype=np.uint8),
+        "left_wrist": np.ascontiguousarray(obs["robot1_eye_in_hand_image"][::-1], dtype=np.uint8),
     }
     return {
         "state": state,

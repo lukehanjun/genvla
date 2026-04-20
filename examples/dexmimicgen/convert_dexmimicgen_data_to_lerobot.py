@@ -108,7 +108,9 @@ def _quat_xyzw_to_rotmat(quaternion: np.ndarray) -> np.ndarray:
 
 
 def _rotmat_to_rot6d(rotation_matrix: np.ndarray) -> np.ndarray:
-    return np.asarray(rotation_matrix[:, :2], dtype=np.float32).reshape(-1)
+    # Match DexMimicGen's action rot6d convention (first two rows of R, = first two cols of R.T)
+    # so state and action parameterize rotation identically.
+    return np.asarray(rotation_matrix[:2, :], dtype=np.float32).reshape(-1)
 
 
 def _quat_xyzw_to_rot6d(quaternion: np.ndarray) -> np.ndarray:
@@ -216,9 +218,11 @@ def main(args: Args) -> None:
                 action = _action_vector(actions, i)
                 dataset.add_frame(
                     {
-                        "observation.images.top": np.asarray(obs["agentview_image"][i], dtype=np.uint8),
-                        "observation.images.left_wrist": np.asarray(obs["robot1_eye_in_hand_image"][i], dtype=np.uint8),
-                        "observation.images.right_wrist": np.asarray(obs["robot0_eye_in_hand_image"][i], dtype=np.uint8),
+                        # robosuite/mujoco camera observations are returned vertically flipped;
+                        # flip to upright so SigLIP sees natural-orientation images.
+                        "observation.images.top": np.ascontiguousarray(obs["agentview_image"][i][::-1], dtype=np.uint8),
+                        "observation.images.left_wrist": np.ascontiguousarray(obs["robot1_eye_in_hand_image"][i][::-1], dtype=np.uint8),
+                        "observation.images.right_wrist": np.ascontiguousarray(obs["robot0_eye_in_hand_image"][i][::-1], dtype=np.uint8),
                         "observation.state": _state_vector(obs, i),
                         "action": action,
                         "task": args.default_prompt,
