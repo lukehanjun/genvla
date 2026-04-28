@@ -7,6 +7,38 @@ from __future__ import annotations
 
 import numpy as np
 
+ACTION_COMPONENTS = {
+    "right": {
+        "position": slice(0, 3),
+        "rotation": slice(3, 9),
+        "gripper": slice(9, 10),
+    },
+    "left": {
+        "position": slice(10, 13),
+        "rotation": slice(13, 19),
+        "gripper": slice(19, 20),
+    },
+}
+
+
+def action_20d_from_action_dict(action_group, index: int) -> np.ndarray:
+    """Build the canonical 20D pi0 action vector from a DexMimicGen ``action_dict`` group.
+
+    Layout:
+    [r_pos(3), r_rot6d(6), r_grip(1), l_pos(3), l_rot6d(6), l_grip(1)]
+    """
+    return np.concatenate(
+        [
+            np.asarray(action_group["right_rel_pos"][index], dtype=np.float32),
+            np.asarray(action_group["right_rel_rot_6d"][index], dtype=np.float32),
+            np.asarray(action_group["right_gripper"][index], dtype=np.float32),
+            np.asarray(action_group["left_rel_pos"][index], dtype=np.float32),
+            np.asarray(action_group["left_rel_rot_6d"][index], dtype=np.float32),
+            np.asarray(action_group["left_gripper"][index], dtype=np.float32),
+        ],
+        dtype=np.float32,
+    )
+
 
 def quat_xyzw_to_rotmat(q):
     """Quaternion (x, y, z, w) to 3x3 rotation matrix."""
@@ -60,17 +92,14 @@ def rotmat_to_axis_angle(rot_mat):
     angle = np.arccos(np.clip((np.trace(rot_mat) - 1.0) / 2.0, -1.0, 1.0))
     if abs(angle) < 1e-8:
         return np.zeros(3, dtype=np.float64)
-    axis = (
-        np.array(
-            [
-                rot_mat[2, 1] - rot_mat[1, 2],
-                rot_mat[0, 2] - rot_mat[2, 0],
-                rot_mat[1, 0] - rot_mat[0, 1],
-            ],
-            dtype=np.float64,
-        )
-        / (2.0 * np.sin(angle))
-    )
+    axis = np.array(
+        [
+            rot_mat[2, 1] - rot_mat[1, 2],
+            rot_mat[0, 2] - rot_mat[2, 0],
+            rot_mat[1, 0] - rot_mat[0, 1],
+        ],
+        dtype=np.float64,
+    ) / (2.0 * np.sin(angle))
     return axis * angle
 
 

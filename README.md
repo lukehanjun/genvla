@@ -83,3 +83,16 @@ python examples/dexmimicgen/rollout_sim.py \
   --camera-names agentview robot0_eye_in_hand robot1_eye_in_hand \
   --stop-on-success
 ```
+
+Each rollout also writes per-episode action diagnostics by default:
+
+```text
+rollout_output_action_viz/episode_000_demo_0/
+  pred_vs_ground_truth_actions.png
+  pred_vs_ground_truth_actions_metrics.json
+```
+
+The plot overlays the fine-tuned policy prediction and DexMimicGen ground-truth action in the same axes, split by
+right/left hand and by position, rotation-6D, and gripper components. If any component exceeds the configured max-error
+threshold, the script prints `CODEBASE ERROR SUSPECTED`. Tune thresholds with `--position-error-threshold`,
+`--rotation-error-threshold`, and `--gripper-error-threshold`, or disable plots with `--no-action-viz`.

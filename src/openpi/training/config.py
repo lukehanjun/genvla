@@ -977,10 +977,10 @@ _CONFIGS = [
     #
     TrainConfig(
         name="pi0_dexmimicgen_two_arm_threading",
-        model=pi0_config.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
-        freeze_filter=pi0_config.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
-        ).get_freeze_filter(),
+        model=pi0_config.Pi0Config(),  # paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+        # freeze_filter=pi0_config.Pi0Config(
+        #     paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+        # ).get_freeze_filter(),
         data=LeRobotDexMimicGenDataConfig(
             repo_id="local/dexmimicgen_two_arm_threading",
             base_config=DataConfig(prompt_from_task=True),
