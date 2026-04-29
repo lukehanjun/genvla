@@ -96,3 +96,17 @@ The plot overlays the fine-tuned policy prediction and DexMimicGen ground-truth 
 right/left hand and by position, rotation-6D, and gripper components. If any component exceeds the configured max-error
 threshold, the script prints `CODEBASE ERROR SUSPECTED`. Tune thresholds with `--position-error-threshold`,
 `--rotation-error-threshold`, and `--gripper-error-threshold`, or disable plots with `--no-action-viz`.
+
+Teacher-forced action validation (no rollout drift):
+
+```bash
+uv run python examples/dexmimicgen/teacher_forced_action_validation.py \
+  --train-config pi0_dexmimicgen_two_arm_threading \
+  --checkpoint checkpoints/pi0_dexmimicgen_two_arm_threading/dexmimicgen_two_arm_threading_v1/5000 \
+  --hdf5 /workspace/hjyu/dexmimicgen/datasets/generated/two_arm_threading.hdf5 \
+  --num-demos 5 --frame-stride 10 \
+  --output-dir viz/rot6d_full_5000/teacher_forced
+```
+
+This feeds true demo observations to the policy and compares the first predicted action to the ground-truth action at
+the same frame. Use this before rollout debugging to separate behavior-cloning error from compounding rollout drift.
