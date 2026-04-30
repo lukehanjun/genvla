@@ -45,10 +45,10 @@ from openpi_client import msgpack_numpy  # noqa: E402
 _DEX_DIR = Path(__file__).resolve().parent
 if str(_DEX_DIR) not in sys.path:
     sys.path.insert(0, str(_DEX_DIR))
-from dexmimicgen_pi0_bridge import ACTION_COMPONENTS  # noqa: E402
 from dexmimicgen_pi0_bridge import action_20d_from_action_dict  # noqa: E402
+from dexmimicgen_pi0_bridge import action_components_for_dim  # noqa: E402
 from dexmimicgen_pi0_bridge import build_observation  # noqa: E402
-from dexmimicgen_pi0_bridge import convert_action_20d_to_14d  # noqa: E402
+from dexmimicgen_pi0_bridge import convert_policy_action_to_robosuite  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -99,16 +99,16 @@ def create_env(env_meta):
 # ---------------------------------------------------------------------------
 
 
-def _normalize_policy_actions(actions) -> np.ndarray:
-    """Return policy actions as ``(H, 20)`` float32, accepting common server shapes."""
+def _normalize_policy_actions(actions, action_dim: int = 20) -> np.ndarray:
+    """Return policy actions as ``(H, action_dim)`` float32, accepting common server shapes."""
     actions = np.asarray(actions, dtype=np.float32)
     if actions.ndim == 3 and actions.shape[0] == 1:
         actions = actions[0]
     if actions.ndim != 2:
         raise ValueError(f"Expected policy actions with shape (H, D) or (1, H, D), got {actions.shape}")
-    if actions.shape[1] < 20:
-        raise ValueError(f"Expected policy actions with at least 20 dims, got {actions.shape}")
-    return actions[:, :20]
+    if actions.shape[1] < action_dim:
+        raise ValueError(f"Expected policy actions with at least {action_dim} dims, got {actions.shape}")
+    return actions[:, :action_dim]
 
 
 def _load_ground_truth_actions_20d(episode_group: h5py.Group) -> np.ndarray:
@@ -151,7 +151,8 @@ def _action_error_summary(
         "components": {},
         "significant_error": False,
     }
-    for hand, components in ACTION_COMPONENTS.items():
+    action_components = action_components_for_dim(pred.shape[1])
+    for hand, components in action_components.items():
         summary["components"][hand] = {}
         for component, sl in components.items():
             diff = pred[:, sl] - gt[:, sl]
@@ -190,16 +191,20 @@ def _plot_action_comparison(
     component_labels = {
         "position": ("position Δ", ("x", "y", "z")),
         "rotation": ("rotation 6D", tuple(f"r6_{i}" for i in range(6))),
-        "gripper": ("gripper", ("grip",)),
     }
     colors = [f"C{i}" for i in range(6)]
+    action_components = action_components_for_dim(predicted.shape[1])
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 9), sharex=True)
     for row, hand in enumerate(("right", "left")):
         for col, component in enumerate(("position", "rotation", "gripper")):
             ax = axes[row, col]
-            sl = ACTION_COMPONENTS[hand][component]
-            component_title, dim_labels = component_labels[component]
+            sl = action_components[hand][component]
+            if component == "gripper":
+                width = sl.stop - sl.start
+                component_title, dim_labels = "gripper", tuple("grip" if width == 1 else f"grip_{i}" for i in range(width))
+            else:
+                component_title, dim_labels = component_labels[component]
             for dim_idx, label in enumerate(dim_labels):
                 color = colors[dim_idx]
                 ax.plot(
@@ -377,13 +382,13 @@ def run_rollout(args):
         for step in range(args.max_steps):
             t0 = time.time()
             if not action_plan:
-                observation = build_observation(obs, prompt=args.prompt)
+                observation = build_observation(obs, prompt=args.prompt, gripper_state_dim=args.gripper_state_dim)
                 result = client.infer(observation)
-                action_chunk_20d = _normalize_policy_actions(result["actions"])
+                action_chunk_20d = _normalize_policy_actions(result["actions"], action_dim=args.policy_action_dim)
                 n_use = min(args.replan_steps, len(action_chunk_20d))
                 for i in range(n_use):
                     action_20d = action_chunk_20d[i]
-                    action_14d = convert_action_20d_to_14d(action_20d)
+                    action_14d = convert_policy_action_to_robosuite(action_20d)
                     action_plan.append((action_14d, action_20d.copy()))
             action, action_20d = action_plan.popleft()
             predicted_actions_20d.append(action_20d)
@@ -509,6 +514,18 @@ def main():
 
     parser.add_argument(
         "--prompt", type=str, default="thread the needle with both arms", help="Language prompt for the policy"
+    )
+    parser.add_argument(
+        "--policy-action-dim",
+        type=int,
+        default=20,
+        help="Number of leading policy action dims to execute/compare: 20 for threading, 30 for drawer cleanup.",
+    )
+    parser.add_argument(
+        "--gripper-state-dim",
+        type=int,
+        default=1,
+        help="Number of gripper qpos dims per hand to include in the policy observation state.",
     )
     parser.add_argument("--stop-on-success", action="store_true", help="Stop episode early upon task success")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")

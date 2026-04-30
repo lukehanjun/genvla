@@ -7,34 +7,49 @@ from __future__ import annotations
 
 import numpy as np
 
-ACTION_COMPONENTS = {
-    "right": {
-        "position": slice(0, 3),
-        "rotation": slice(3, 9),
-        "gripper": slice(9, 10),
-    },
-    "left": {
-        "position": slice(10, 13),
-        "rotation": slice(13, 19),
-        "gripper": slice(19, 20),
-    },
-}
+
+def action_components_for_dim(action_dim: int) -> dict[str, dict[str, slice]]:
+    """Return right/left component slices for a DexMimicGen pi0 action vector.
+
+    The common layout is:
+    [r_pos(3), r_rot6d(6), r_grip(G), l_pos(3), l_rot6d(6), l_grip(G)].
+    Threading uses G=1 (20D total); drawer cleanup uses G=6 (30D total).
+    """
+    if action_dim < 20 or (action_dim - 18) % 2 != 0:
+        raise ValueError(f"Unsupported DexMimicGen action dim {action_dim}; expected 20, 30, or 18 + 2*G")
+    gripper_dim = (action_dim - 18) // 2
+    left_start = 9 + gripper_dim
+    return {
+        "right": {
+            "position": slice(0, 3),
+            "rotation": slice(3, 9),
+            "gripper": slice(9, 9 + gripper_dim),
+        },
+        "left": {
+            "position": slice(left_start, left_start + 3),
+            "rotation": slice(left_start + 3, left_start + 9),
+            "gripper": slice(left_start + 9, left_start + 9 + gripper_dim),
+        },
+    }
+
+
+ACTION_COMPONENTS = action_components_for_dim(20)
 
 
 def action_20d_from_action_dict(action_group, index: int) -> np.ndarray:
-    """Build the canonical 20D pi0 action vector from a DexMimicGen ``action_dict`` group.
+    """Build the canonical pi0 action vector from a DexMimicGen ``action_dict`` group.
 
-    Layout:
-    [r_pos(3), r_rot6d(6), r_grip(1), l_pos(3), l_rot6d(6), l_grip(1)]
+    Despite the historical function name, this preserves the full gripper action width from
+    the dataset: threading returns 20D, drawer cleanup returns 30D.
     """
     return np.concatenate(
         [
             np.asarray(action_group["right_rel_pos"][index], dtype=np.float32),
             np.asarray(action_group["right_rel_rot_6d"][index], dtype=np.float32),
-            np.asarray(action_group["right_gripper"][index], dtype=np.float32),
+            np.asarray(action_group["right_gripper"][index], dtype=np.float32).reshape(-1),
             np.asarray(action_group["left_rel_pos"][index], dtype=np.float32),
             np.asarray(action_group["left_rel_rot_6d"][index], dtype=np.float32),
-            np.asarray(action_group["left_gripper"][index], dtype=np.float32),
+            np.asarray(action_group["left_gripper"][index], dtype=np.float32).reshape(-1),
         ],
         dtype=np.float32,
     )
@@ -108,37 +123,53 @@ def rot6d_to_axis_angle(r6):
     return rotmat_to_axis_angle(rot6d_to_rotmat(r6).T)
 
 
-def convert_action_20d_to_14d(action_20d):
-    """20D pi0 action -> 14D robosuite OSC_POSE action.
+def convert_policy_action_to_robosuite(action):
+    """pi0 DexMimicGen action -> robosuite OSC_POSE action.
 
-    Input:  [r_pos(3), r_rot6d(6), r_grip(1), l_pos(3), l_rot6d(6), l_grip(1)]
-    Output: [r_pos(3), r_aa(3), r_grip(1), l_pos(3), l_aa(3), l_grip(1)]
+    Input:  [r_pos(3), r_rot6d(6), r_grip(G), l_pos(3), l_rot6d(6), l_grip(G)]
+    Output: [r_pos(3), r_aa(3), r_grip(G), l_pos(3), l_aa(3), l_grip(G)]
+
+    G=1 for two-arm threading (20D -> 14D) and G=6 for two-arm drawer cleanup (30D -> 24D).
     """
-    r_pos = action_20d[0:3]
-    r_rot6d = action_20d[3:9]
-    r_grip = action_20d[9:10]
-    l_pos = action_20d[10:13]
-    l_rot6d = action_20d[13:19]
-    l_grip = action_20d[19:20]
+    action = np.asarray(action)
+    components = action_components_for_dim(action.shape[-1])
+    r_pos = action[components["right"]["position"]]
+    r_rot6d = action[components["right"]["rotation"]]
+    r_grip = action[components["right"]["gripper"]]
+    l_pos = action[components["left"]["position"]]
+    l_rot6d = action[components["left"]["rotation"]]
+    l_grip = action[components["left"]["gripper"]]
     r_aa = rot6d_to_axis_angle(r_rot6d)
     l_aa = rot6d_to_axis_angle(l_rot6d)
     return np.concatenate([r_pos, r_aa, r_grip, l_pos, l_aa, l_grip]).astype(np.float64)
 
 
-def build_observation(obs, prompt="thread the needle with both arms"):
+def convert_action_20d_to_14d(action_20d):
+    """Backward-compatible alias for the threading 20D -> 14D conversion."""
+    return convert_policy_action_to_robosuite(action_20d)
+
+
+def _gripper_qpos(obs, key: str, dim: int) -> np.ndarray:
+    qpos = np.asarray(obs[key], dtype=np.float32).reshape(-1)
+    if qpos.shape[0] < dim:
+        raise ValueError(f"Expected {key} to have at least {dim} dims, got {qpos.shape[0]}")
+    return qpos[:dim]
+
+
+def build_observation(obs, prompt="thread the needle with both arms", gripper_state_dim: int = 1):
     """Build the observation dict expected by the pi0 DexMimicGen policy server.
 
     State layout matches ``convert_dexmimicgen_data_to_lerobot.py``:
-    [r_eef_pos(3), r_rot6d(6), r_grip(1), l_eef_pos(3), l_rot6d(6), l_grip(1)]
+    [r_eef_pos(3), r_rot6d(6), r_grip(G), l_eef_pos(3), l_rot6d(6), l_grip(G)].
     """
     state = np.concatenate(
         [
             np.asarray(obs["robot0_eef_pos"], dtype=np.float32),
             quat_xyzw_to_rot6d(obs["robot0_eef_quat"]),
-            np.asarray([obs["robot0_gripper_qpos"][0]], dtype=np.float32),
+            _gripper_qpos(obs, "robot0_gripper_qpos", gripper_state_dim),
             np.asarray(obs["robot1_eef_pos"], dtype=np.float32),
             quat_xyzw_to_rot6d(obs["robot1_eef_quat"]),
-            np.asarray([obs["robot1_gripper_qpos"][0]], dtype=np.float32),
+            _gripper_qpos(obs, "robot1_gripper_qpos", gripper_state_dim),
         ]
     )
     # robosuite/mujoco camera observations are returned vertically flipped;

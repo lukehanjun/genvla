@@ -284,6 +284,7 @@ class LeRobotDexMimicGenDataConfig(DataConfigFactory):
     """Config for DexMimicGen bimanual datasets stored in LeRobot format."""
 
     default_prompt: str | None = None
+    action_dim: int = 20
     repack_transforms: tyro.conf.Suppress[_transforms.Group] = dataclasses.field(
         default=_transforms.Group(
             inputs=[
@@ -307,7 +308,7 @@ class LeRobotDexMimicGenDataConfig(DataConfigFactory):
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         data_transforms = _transforms.Group(
             inputs=[dexmimicgen_policy.DexMimicGenInputs()],
-            outputs=[dexmimicgen_policy.DexMimicGenOutputs()],
+            outputs=[dexmimicgen_policy.DexMimicGenOutputs(action_dim=self.action_dim)],
         )
         model_transforms = ModelTransformFactory(default_prompt=self.default_prompt)(model_config)
 
@@ -981,6 +982,45 @@ _CONFIGS = [
         # freeze_filter=pi0_config.Pi0Config(
         #     paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
         # ).get_freeze_filter(),
+        data=LeRobotDexMimicGenDataConfig(
+            repo_id="local/dexmimicgen_two_arm_threading",
+            base_config=DataConfig(prompt_from_task=True),
+            default_prompt=dexmimicgen_policy.DEFAULT_PROMPT,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        # PyTorch finetuning should load from an already-converted base checkpoint.
+        pytorch_weight_path="checkpoints/pi0_base_pytorch",
+        pytorch_training_precision="bfloat16",
+        batch_size=32,
+        num_train_steps=20_000,
+    ),
+    TrainConfig(
+        name="pi0_dexmimicgen_two_arm_drawer_cleanup",
+        model=pi0_config.Pi0Config(),
+        data=LeRobotDexMimicGenDataConfig(
+            repo_id="local/dexmimicgen_two_arm_drawer_cleanup",
+            base_config=DataConfig(prompt_from_task=True),
+            default_prompt=dexmimicgen_policy.DRAWER_CLEANUP_PROMPT,
+            action_dim=30,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        # PyTorch finetuning should load from an already-converted base checkpoint.
+        pytorch_weight_path="checkpoints/pi0_base_pytorch",
+        pytorch_training_precision="bfloat16",
+        batch_size=32,
+        num_train_steps=20_000,
+    ),
+
+    TrainConfig(
+        name="pi0_dexmimicgen_two_arm_threading_lora_h10",
+        model=pi0_config.Pi0Config(paligemma_variant="gemma_2b_lora",
+                                   action_expert_variant="gemma_300m_lora",
+                                   action_horizon=10,),  # paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+        freeze_filter=pi0_config.Pi0Config(
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            action_horizon=10,
+        ).get_freeze_filter(),
         data=LeRobotDexMimicGenDataConfig(
             repo_id="local/dexmimicgen_two_arm_threading",
             base_config=DataConfig(prompt_from_task=True),

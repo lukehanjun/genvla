@@ -7,6 +7,7 @@ import numpy as np
 from openpi import transforms
 
 DEFAULT_PROMPT = "thread the needle with both arms"
+DRAWER_CLEANUP_PROMPT = "clean up the drawer with both arms"
 
 
 def make_dexmimicgen_example() -> dict:
@@ -74,5 +75,7 @@ class DexMimicGenInputs(transforms.DataTransformFn):
 class DexMimicGenOutputs(transforms.DataTransformFn):
     """Output adapter for DexMimicGen bimanual actions."""
 
+    action_dim: int = 20
+
     def __call__(self, data: dict) -> dict:
-        return {"actions": np.asarray(data["actions"][:, :20], dtype=np.float32)}
+        return {"actions": np.asarray(data["actions"][:, : self.action_dim], dtype=np.float32)}

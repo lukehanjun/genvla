@@ -49,6 +49,36 @@ uv run torchrun --standalone --nnodes=1 --nproc_per_node=2 \
   --exp_name dexmimicgen_two_arm_threading_v1
 ```
 
+### Two-arm drawer cleanup variant
+The drawer-cleanup task uses the same DexMimicGen pi0 bridge, but keeps 6 dexterous-hand action channels per hand
+(30D pi0 action chunks, converted to 24D robosuite actions at rollout time).
+
+```bash
+# Convert drawer cleanup HDF5 to LeRobot.
+uv run python examples/dexmimicgen/convert_two_arm_drawer_cleanup_data_to_lerobot.py
+
+# Compute fresh normalization statistics for the drawer cleanup config.
+uv run scripts/compute_norm_stats.py --config-name pi0_dexmimicgen_two_arm_drawer_cleanup
+
+# Fine-tune with the task-specific wrapper.
+uv run python scripts/train_two_arm_drawer_cleanup_pytorch.py --exp_name dexmimicgen_two_arm_drawer_cleanup_v1
+```
+
+To run a drawer-cleanup checkpoint in simulation:
+
+```bash
+# Policy server
+uv run scripts/serve_policy.py --port 8000 policy:checkpoint \
+  --policy.config=pi0_dexmimicgen_two_arm_drawer_cleanup \
+  --policy.dir=checkpoints/pi0_dexmimicgen_two_arm_drawer_cleanup/dexmimicgen_two_arm_drawer_cleanup_v1/10000
+
+# DexMimicGen / robosuite environment
+python examples/dexmimicgen/rollout_two_arm_drawer_cleanup_sim.py \
+  --host localhost --port 8000 \
+  --num-episodes 1 --max-steps 400 --replan-steps 10 \
+  --stop-on-success
+```
+
 ### 6) Visualizing
 ```bash
 # Visualize dataset only

@@ -20,3 +20,8 @@ def test_dexmimicgen_inputs_outputs():
 
     outputs = dexmimicgen_policy.DexMimicGenOutputs()({"actions": np.random.rand(10, 32).astype(np.float32)})
     assert outputs["actions"].shape == (10, 20)
+
+    drawer_outputs = dexmimicgen_policy.DexMimicGenOutputs(action_dim=30)(
+        {"actions": np.random.rand(10, 32).astype(np.float32)}
+    )
+    assert drawer_outputs["actions"].shape == (10, 30)
